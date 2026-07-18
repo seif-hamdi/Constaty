@@ -1,0 +1,212 @@
+collect_constat_task:
+  description: |
+    Create a European automobile accident statement from the user's statement and
+    optional proof image.
+
+    INPUT
+    - User statement: {incident_statement}
+    - Proof image path or URL: {image_path}
+
+    RULES
+    - Use only facts explicitly stated by the user or clearly visible in the image.
+    - Never invent names, addresses, contact details, dates, locations, vehicle
+      details, insurance details, witnesses, police information, damage, or liability.
+    - Use null for an unknown scalar and [] for an unknown list.
+    - If an image is provided, analyze it and separate visible observations from
+      claims that the image cannot prove.
+    - Do not determine legal liability.
+    - Return every key required by the structured JSON schema.
+    - follow_up_questions is advisory only. Use [] normally, or include at most
+      2 essential questions when critical information is missing.
+    - Do not put Markdown fences or prose outside the JSON object.
+
+    STANDARD CONSTAT DOMAINS
+    - accident: date, time, country, exact_location, injuries_even_minor,
+      damage_to_other_vehicles, damage_to_other_property, witnesses.
+    - each witness: full_name, address, phone_or_email.
+    - vehicle_a and vehicle_b insured: last_name, first_name, address,
+      postal_code, country, phone_or_email.
+    - vehicle_a and vehicle_b vehicle: make_and_model, registration_number,
+      registration_country, trailer_registration_number,
+      trailer_registration_country.
+    - vehicle_a and vehicle_b insurer: company, policy_number,
+      green_card_number, valid_from, valid_to, agency_name, agency_address,
+      agency_country, agency_phone_or_email, vehicle_damage_covered.
+    - vehicle_a and vehicle_b driver: last_name, first_name, birth_date,
+      address, country, phone_or_email, licence_number, licence_category,
+      licence_valid_until.
+    - vehicle_a and vehicle_b: initial_impact_point, visible_damage, observations.
+    - circumstances: vehicle_a_codes, vehicle_b_codes, sketch_description.
+    - additional_declaration: detailed_incident_description,
+      police_or_gendarmerie_report, report_reference_or_station,
+      vehicle_available_for_inspection_at, injured_people.
+    - each injured person: full_name, contact, injury_description, transported_to.
+    - evidence: user_statement, image_path_or_url, image_observations,
+      facts_supported_by_image, facts_not_proven_by_image.
+    - data_quality: missing_fields, uncertain_fields, contradictions,
+      user_confirmed.
+
+    CIRCUMSTANCE CODES
+    1 parked or stopped
+    2 leaving parking or opening a door
+    3 entering parking
+    4 leaving a parking area, private place, or track
+    5 entering a parking area, private place, or track
+    6 entering a roundabout
+    7 driving on a roundabout
+    8 rear impact while travelling in the same direction and lane
+    9 travelling in the same direction but a different lane
+    10 changing lanes
+    11 overtaking
+    12 turning right
+    13 turning left
+    14 reversing
+    15 entering the lane reserved for opposite traffic
+    16 coming from the right at an intersection
+    17 ignored a priority sign or red light
+
+  expected_output: |
+    One valid JSON object matching ConstatTaskOutput exactly, with these top-level
+    keys and no additional keys:
+    - constat
+    - follow_up_questions
+    - ready_for_confirmation
+    - summary_for_user
+
+    The constat object must contain accident, vehicle_a, vehicle_b,
+    circumstances, additional_declaration, evidence, and data_quality.
+  human_input: true
+  guardrail_max_retries: 3
+  markdown: false
+  output_file: constat_input.json
+
+structure_claim_task:
+  description: |
+    Validate and normalize the human-reviewed constat from the previous task.
+    Preserve supported facts and never invent missing information.
+    Identify missing fields, uncertain fields, contradictions, and evidence sources.
+  expected_output: |
+    Valid JSON with exactly these keys:
+    - claim_summary
+    - missing_fields
+    - uncertain_fields
+    - contradictions
+    - evidence_sources
+  markdown: false
+
+assess_vehicle_damage_task:
+  description: |
+    Assess only vehicle damage visible in this proof image:
+
+    {image_path}
+
+    Use the reviewed constat and structured claim from the previous tasks.
+    Do not estimate repair cost or invent hidden damage.
+    State clearly when image quality prevents a reliable assessment.
+  expected_output: |
+    Valid JSON with exactly these keys:
+    - damaged_parts
+    - damage_type
+    - severity
+    - image_quality
+    - confidence
+    - expert_inspection_required
+    - explanation
+  markdown: false
+
+analyze_claim_risk_task:
+  description: |
+    Analyze the structured claim and visible-damage assessment. Classify the
+    accident into exactly one case from the Tunisian FTUSA 25-case responsibility
+    barème, predict the X/Y responsibility split, and validate the prediction with
+    BaremeTesterTool.
+
+    Historical context:
+    {historical_claim_context}
+
+    REQUIRED PROCESS
+    1. Identify the accident direction, road position, parking/stopping status,
+       manoeuvres, priority rules, signage, and impact geometry.
+    2. Select exactly one FTUSA case number from 1 to 25.
+    3. Use only the canonical feature labels listed below.
+    4. Predict responsibility_x_pct and responsibility_y_pct; they must sum to 100.
+    5. Call BaremeTesterTool with the selected case, percentages, detected
+       features, and explanation.
+    6. If the tool returns passed=false, reconsider the case, percentages, or
+       supported features and call it again. Do not invent features just to pass.
+    7. Copy the complete parsed tool result into bareme_test in the final JSON.
+    8. Return exactly 3 distinct risk indicators: no more and no fewer.
+       Select only the 3 most important indicators supported by the available
+       evidence. Do not treat ordinary missing evidence as suspicious by itself.
+    9. Do not claim that fraud is confirmed. Risk indicators must be factual,
+       explainable, and suitable for human review.
+
+    FTUSA CASE INDEX
+    1: X struck on rear; 0/100; [same_direction, same_lane, x_rear_impact]
+    2: sideswipe without lane change; 50/50; [same_direction, different_lanes, sideswipe, no_lane_change]
+    3: Y changes lane while X overtakes on median; 50/50; [same_direction, y_lane_change, x_overtaking, x_on_median_axis]
+    4: Y changes lane; 0/100; [same_direction, different_lanes, y_lane_change]
+    5: Y leaves parking; 0/100; [y_leaving_parking, x_in_traffic_lane]
+    6: Y crosses median; 0/100; [opposite_directions, y_crosses_median, x_in_own_lane]
+    7: both cross median or positions indeterminate; 50/50; [opposite_directions, median_position_indeterminate_or_both_cross]
+    8: priority X crosses median; 25/75; [different_roads, x_has_priority, x_crosses_median, y_in_own_lane]
+    9: X has right priority and stays in lane; 0/100; [different_roads, x_has_right_priority, x_in_own_lane]
+    10: X legally parked/stopped; 0/100; [x_parked_or_stopped, x_position_regular]
+    11: X illegally parked in urban area without obstruction; 0/100; [x_parked_or_stopped, urban_area, x_position_illegal, no_traffic_obstruction]
+    12: X illegally parked in urban area and obstructing; 25/75; [x_parked_or_stopped, urban_area, x_position_illegal, traffic_obstruction]
+    13: X irregularly parked outside urban area; 50/50; [x_parked_or_stopped, outside_urban_area, x_position_irregular]
+    14: Y disobeys traffic control/sign; 0/100; [y_disobeys_traffic_control_or_sign]
+    15: Y reverses, makes U-turn, or performs parking manoeuvre; 0/100; [y_reversing_u_turn_or_parking_manoeuvre]
+    16: Y exits parking/private place/dirt road; 0/100; [y_exits_parking_private_place_or_dirt_road]
+    17: X enters such a place without lane change; 0/100; [x_enters_parking_private_place_or_dirt_road, x_no_lane_change]
+    18: X enters such a place with lane change; 100/0; [x_enters_parking_private_place_or_dirt_road, x_lane_change]
+    19: Y door opens; 0/100; [y_door_open]
+    20: damage from Y stones/transported objects; 0/100; [damage_from_y_stones_or_transported_objects]
+    21: Y without lights outside urban area; 0/100; [y_without_lights, outside_urban_area]
+    22: Y without lights in urban area; 50/50; [y_without_lights, urban_area]
+    23: traffic-light phase or origin disputed; 50/50; [traffic_light_or_origin_disputed]
+    24: chain collision, Y is last vehicle; 0/100; [chain_collision, y_is_last_vehicle_in_chain]
+    25: successive impacts, Y hits vehicle ahead; 0/100; [successive_impacts, y_hits_vehicle_ahead]
+
+  expected_output: |
+    One valid JSON object matching RiskAnalysisOutput exactly, with these keys:
+    - predicted_case_no
+    - predicted_case_title
+    - responsibility_x_pct
+    - responsibility_y_pct
+    - detected_features
+    - explanation
+    - bareme_test
+    - risk_level
+    - risk_indicators: exactly 3 distinct strings
+    - supporting_evidence
+    - risk_summary
+
+    bareme_test must contain the complete JSON returned by BaremeTesterTool.
+    Do not include Markdown fences or text outside the JSON object.
+  markdown: false
+
+create_decision_report_task:
+  description: |
+    Prepare the final report for the insurance agent using the outputs of the
+    previous tasks.
+
+    Recommend exactly one next action:
+    - normal_processing
+    - request_more_information
+    - expert_inspection
+    - fraud_review
+
+    Preserve all important uncertainty. In the Risk Indicators section, copy
+    exactly the 3 indicators produced by the Risk Detector Agent. Do not add
+    extra indicators.
+  expected_output: |
+    A concise Markdown report containing:
+    - Claim Summary
+    - Damage Assessment
+    - Risk Indicators: exactly 3 entries
+    - Recommended Action
+    - Evidence Traceability
+    - Agent Validation Options
+  markdown: true
+  output_file: report.md
