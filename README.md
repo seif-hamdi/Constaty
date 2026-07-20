@@ -213,7 +213,8 @@ Statement:
 I was driving straight through the intersection when another vehicle entered from my right and hit the front passenger side of my car.
 
 Image:
-Pipeline.png
+Angle1.png
+Angle2.png
 ```
 
 ## Expected workflow result
