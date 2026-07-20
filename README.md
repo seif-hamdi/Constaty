@@ -97,7 +97,7 @@ Gemini 2.5 Flash accepts image input. When prompted, provide either:
 ## Example interactive run
 
 <p align="center">
-  <img src="assets/constaty-cli-run.png" alt="Constaty CrewAI command-line run showing accident statement input, image URL input, agent startup, and the human review prompt" width="900">
+  <img src="Pipeline.png" alt="Constaty CrewAI command-line run showing accident statement input, image URL input, agent startup, and the human review prompt" width="900">
 </p>
 
 The terminal example shows the full intake entry point:
