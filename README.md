@@ -3,6 +3,7 @@
 Constaty is a sequential **CrewAI** workflow for processing motor-accident declarations in Tunisia. It converts a user’s written statement and accident photo into structured claim data, pauses for human review, classifies responsibility using the **FTUSA 25-case barème**, and produces a final reviewed report.
 
 The project is designed so that operational behavior remains configurable in YAML, while Python is limited to the crew wiring, validation schemas, guardrails, and the FTUSA validation tool.
+Developed By: Seifeddine Hamdi/Nadhem Benhadjali
 
 ## Project presentation
 
